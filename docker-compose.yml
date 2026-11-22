@@ -1,0 +1,60 @@
+# Local development: docker compose up --build
+#   Frontend  http://localhost:3000
+#   API       http://localhost:5000   (Swagger: /api-docs)
+#   Mailpit   http://localhost:8025   (see the "task assigned" emails)
+# Seed demo data: docker compose exec backend npm run seed
+
+services:
+  mongo:
+    image: mongo:8
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      retries: 10
+
+  # Fake SMTP server with a web inbox - no real emails leave your machine.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025" # web UI
+      - "1025:1025" # SMTP
+
+  backend:
+    build:
+      context: ./backend
+      target: dev
+    env_file:
+      - path: ./backend/.env # optional: your Cloudinary keys etc.
+        required: false
+    environment: # these win over values from .env
+      MONGO_URI: mongodb://mongo:27017/task_portal
+      CLIENT_URL: http://localhost:3000
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend/src:/app/src # live reload on code changes
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    environment:
+      API_URL: http://backend:5000 # Next.js forwards /api/* here
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src
+    depends_on:
+      - backend
+
+volumes:
+  mongo-data:
